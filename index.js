@@ -1,23 +1,58 @@
+// index.js — KV Dashboard API (Render-ready)
 const express = require("express");
 const cors = require("cors");
+
 const app = express();
 
-// ✅ Allow your frontend domain
-const allowedOrigins = [
-  "http://localhost:5173", // local dev
-  "https://kv-dashboard-client.vercel.app" // your Vercel frontend
+// --- CORS: allow your Vercel client + local dev ---
+const ALLOWED_ORIGINS = [
+  "https://kv-dashboard-client.vercel.app",
+  "http://localhost:5173"
 ];
 
-app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error("Not allowed by CORS"));
-    }
-  },
-  credentials: true
-}));
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.header("Access-Control-Allow-Origin", origin);
+  }
+  res.header("Vary", "Origin");
+  next();
+});
 
-// rest of your code
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);             // allow curl/postman
+      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      return cb(new Error("Not allowed by CORS"));
+    },
+    credentials: true
+  })
+);
+
 app.use(express.json());
+
+// --- Health check (Render pings this) ---
+app.get("/health", (req, res) => {
+  res.json({ ok: true, uptime: process.uptime() });
+});
+
+// --- Simple API for your dashboard cards ---
+app.get("/stats/summary", (req, res) => {
+  res.json({
+    bookingsTotal: 128,
+    activeRentals: 14,
+    vehicles: 23,
+    revenue: 12480
+  });
+});
+
+// Root message so hitting the base URL doesn't 404
+app.get("/", (req, res) => {
+  res.send("KV Dashboard API is running. Try /health or /stats/summary");
+});
+
+// --- Start server (Render provides PORT) ---
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`KV API listening on ${PORT}`));
+
