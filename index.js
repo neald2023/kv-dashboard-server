@@ -1,39 +1,39 @@
-// index.js (server)
-const express = require('express');
-const cors = require('cors');
+const express = require("express");
+const cors = require("cors");
 
 const app = express();
 
-// Allow your Vercel site to call this API
-const allowed = [
-  'https://kv-dashboard-client.vercel.app', // your live client URL
+// === allow your Vercel site to call this API ===
+const allowedOrigins = [
+  "https://kv-dashboard-client.vercel.app", // your live client URL
+  "http://localhost:5173"                    // dev (optional)
 ];
-app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin || allowed.includes(origin) || /\.vercel\.app$/.test(origin)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-}));
 
-app.use(express.json());
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(new Error("Not allowed by CORS"));
+    },
+    credentials: true
+  })
+);
 
-// Quick checks
-app.get('/', (req, res) => res.send('KV Server OK'));
-app.get('/health', (req, res) => res.json({ ok: true }));
+// health check
+app.get("/health", (req, res) => {
+  res.json({ ok: true, time: new Date().toISOString() });
+});
 
-// Mock data for dashboard tiles
-app.get('/stats/summary', (req, res) => {
+// summary (mock data the dashboard needs)
+app.get("/stats/summary", (req, res) => {
   res.json({
     bookingsTotal: 128,
     activeRentals: 14,
     vehicles: 23,
-    revenue: 12480,
+    revenue: 12480
   });
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log('KV server listening on', PORT));
+app.listen(PORT, () => console.log("KV server listening on", PORT));
