@@ -1,133 +1,96 @@
-// index.js — KV Dashboard Server (vehicles with full profile)
-const express = require("express");
-const cors = require("cors");
+// index.js — KV Dashboard Server (full file)
+// Uses: express + cors
+import express from "express";
+import cors from "cors";
 
 const app = express();
 app.use(express.json());
 
-// CORS: allow your Vercel client
+// ----- CORS: allow your Vercel app + localhost + all vercel.app previews -----
 const ALLOWED_ORIGINS = [
-  "https://kv-dashboard-client.vercel.app"
+  "https://kv-dashboard-client.vercel.app",
+  "http://localhost:5173",
 ];
-app.use(cors({
-  origin(origin, cb) {
-    if (!origin) return cb(null, true);
-    if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
-    return cb(new Error("Not allowed by CORS"));
-  }
-}));
 
-// Health
+app.use(
+  cors({
+    origin: (origin, cb) => {
+      // allow server-to-server, curl, and same-origin (no Origin header)
+      if (!origin) return cb(null, true);
+
+      let ok = false;
+      try {
+        const host = new URL(origin).host; // e.g. my-build-abc.vercel.app
+        const isVercelPreview = /\.vercel\.app$/i.test(host);
+        ok = ALLOWED_ORIGINS.includes(origin) || isVercelPreview;
+      } catch {
+        ok = false;
+      }
+      return ok ? cb(null, true) : cb(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
+);
+
+// -------------------- MOCK DATA (temporary) --------------------
+const vehicles = [
+  { id: "veh_1", year: 2021, make: "Toyota", model: "RAV4", vin: "JTMB1RFV1M1234567", color: "Silver", plate: "ABC-123", currentOdometer: 41250, status: "available" },
+  { id: "veh_2", year: 2019, make: "BMW", model: "3 Series", vin: "WBA8E1G58GNU12345", color: "Black", plate: "BMW-333", currentOdometer: 65320, status: "out" },
+  { id: "veh_3", year: 2020, make: "Ford", model: "Fiesta", vin: "3FADP4BJ0LM123456", color: "Blue", plate: "FOR-555", currentOdometer: 28870, status: "available" },
+];
+
+const customers = [
+  { id: "cust_1", name: "Lisa Smith", phone: "+1 555-0101", email: "lisa@example.com", dlNumber: "S1234567" },
+  { id: "cust_2", name: "Thomas Brown", phone: "+1 555-0202", email: "thomas@example.com", dlNumber: "B2345678" },
+  { id: "cust_3", name: "Sarah Jones", phone: "+1 555-0303", email: "sarah@example.com", dlNumber: "J3456789" },
+];
+
+const bookings = [
+  { id: "bk_1", customerId: "cust_1", vehicleId: "veh_1", pickup: "2025-08-21T10:00:00Z", dropoff: "2025-08-23T10:00:00Z", status: "scheduled", estTotal: 240.0 },
+  { id: "bk_2", customerId: "cust_2", vehicleId: "veh_2", pickup: "2025-08-18T12:00:00Z", dropoff: "2025-08-20T12:00:00Z", status: "out", estTotal: 360.0 },
+];
+
+// -------------------- ROUTES --------------------
+
+// Health (for the “Live/Offline” badge)
 app.get("/health", (req, res) => {
   res.json({ ok: true, uptime: process.uptime() });
 });
 
-// ---------- MOCK DATA (now with full fields) ----------
-let vehicles = [
-  {
-    id: "veh_1",
-    year: 2021,
-    make: "Toyota",
-    model: "RAV4",
-    vin: "2T3H1RFV1MW123456",
-    color: "White",
-    plate: "ABC-123",
-    currentOdometer: 41250,
-    status: "available"
-  },
-  {
-    id: "veh_2",
-    year: 2020,
-    make: "BMW",
-    model: "3 Series",
-    vin: "WBA5A7C5XLF654321",
-    color: "Black",
-    plate: "BMW-333",
-    currentOdometer: 65320,
-    status: "out"
-  },
-  {
-    id: "veh_3",
-    year: 2019,
-    make: "Ford",
-    model: "Fiesta",
-    vin: "3FADP4BJ5KM789012",
-    color: "Blue",
-    plate: "FOR-555",
-    currentOdometer: 28870,
-    status: "maintenance"
-  }
-];
+// Root (avoid “Cannot GET /” confusion)
+app.get("/", (req, res) => {
+  res.send('KV Dashboard API is running. Try <a href="/health">/health</a> or <a href="/stats/summary">/stats/summary</a>.');
+});
 
-let customers = [
-  { id: "cus_1", name: "Lisa Smith",  email: "lisa@example.com",  phone: "+14085550111", license: "S123-4567" },
-  { id: "cus_2", name: "Thomas Brown", email: "thomas@example.com", phone: "+14085550222", license: "B987-6543" }
-];
-
-// Reads
-app.get("/vehicles", (req, res) => res.json(vehicles));
-app.get("/customers", (req, res) => res.json(customers));
-
+// Summary tiles shown on the Dashboard
 app.get("/stats/summary", (req, res) => {
-  const activeRentals = vehicles.filter(v => v.status === "out").length;
+  const activeRentals = vehicles.filter((v) => v.status === "out").length;
+  const revenue = 12480; // placeholder demo number
   res.json({
-    bookingsTotal: 128,
+    bookingsTotal: bookings.length,
     activeRentals,
     vehicles: vehicles.length,
-    revenue: 12480
+    revenue,
   });
 });
 
-// ---------- UPDATE VEHICLE PROFILE ----------
-/*
-PUT /vehicles/:id
-Body (any subset of these fields):
-{
-  "year": 2021,
-  "make": "Toyota",
-  "model": "RAV4",
-  "vin": "....",
-  "color": "White",
-  "plate": "ABC-123",
-  "currentOdometer": 42000,
-  "status": "available" | "out" | "maintenance"
-}
-*/
-app.put("/vehicles/:id", (req, res) => {
-  const { id } = req.params;
-  const v = vehicles.find(x => x.id === id);
-  if (!v) return res.status(404).json({ ok: false, error: "Vehicle not found" });
-
-  const allowedStatuses = ["available", "out", "maintenance"];
-  const data = req.body || {};
-
-  // Validate & assign only known fields
-  if (data.status !== undefined && !allowedStatuses.includes(data.status)) {
-    return res.status(400).json({ ok: false, error: "Invalid status" });
-  }
-  if (data.currentOdometer !== undefined) {
-    const n = Number(data.currentOdometer);
-    if (!Number.isFinite(n) || n < 0) {
-      return res.status(400).json({ ok: false, error: "Invalid odometer" });
-    }
-    v.currentOdometer = n;
-  }
-  if (data.year !== undefined) v.year = Number(data.year);
-  if (data.make !== undefined) v.make = String(data.make);
-  if (data.model !== undefined) v.model = String(data.model);
-  if (data.vin !== undefined) v.vin = String(data.vin);
-  if (data.color !== undefined) v.color = String(data.color);
-  if (data.plate !== undefined) v.plate = String(data.plate);
-  if (data.status !== undefined) v.status = data.status;
-
-  return res.json({ ok: true, vehicle: v });
+// Vehicles list (for the Vehicles tab)
+app.get("/vehicles", (req, res) => {
+  res.json(vehicles);
 });
 
-// Root helper
-app.get("/", (req, res) => {
-  res.send("KV Dashboard API running. Try /health, /vehicles, /customers, /stats/summary");
+// Customers list (for the Customers tab)
+app.get("/customers", (req, res) => {
+  res.json(customers);
 });
 
-// Start
+// Bookings list (for the Bookings tab)
+app.get("/bookings", (req, res) => {
+  res.json(bookings);
+});
+
+// -------------------- START SERVER --------------------
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`KV API listening on ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`KV API listening on ${PORT}`);
+});
