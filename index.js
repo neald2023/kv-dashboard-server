@@ -75,6 +75,32 @@ app.get("/stats/summary", (req, res) => {
     revenue: 17449, // placeholder for now
   });
 });
+// list vehicles (for the Vehicles tab)
+app.get("/vehicles", (req, res) => {
+  res.json(vehicles);
+});
+
+// simple stats tile data (optional, safe to include)
+app.get("/stats/summary", (req, res) => {
+  const activeRentals = vehicles.filter(v => v.status === "out").length;
+  res.json({
+    vehicles: vehicles.length,
+    activeRentals,
+    revenue: 17449, // placeholder for now
+  });
+});
+
+// list customers (for the Customers tab)
+const customers = [
+  { id: "cust_1", name: "John Doe", phone: "401-555-1234", email: "john@example.com" },
+  { id: "cust_2", name: "Jane Smith", phone: "401-555-5678", email: "jane@example.com" }
+];
+
+app.get("/customers", (req, res) => {
+  res.json(customers);
+});
+
+app.listen(PORT, () => console.log(`KV API listening on ${PORT}`));
 
 app.listen(PORT, () => console.log(`KV API listening on ${PORT}`));
 
