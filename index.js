@@ -54,5 +54,27 @@ app.get("/", (req, res) => {
 
 // --- Start server (Render provides PORT) ---
 const PORT = process.env.PORT || 10000;
+// ---- TEMP in-memory data (replace with DB later) ----
+let vehicles = [
+  { id: "veh_1", name: "Toyota RAV4", plate: "ABC-123", currentOdometer: 41250, status: "available" },
+  { id: "veh_2", name: "BMW 3 Series", plate: "BMW-333", currentOdometer: 65320, status: "out" },
+  { id: "veh_3", name: "Ford Fiesta", plate: "FOR-555", currentOdometer: 28870, status: "available" },
+];
+
+// list vehicles (for the Vehicles tab)
+app.get("/vehicles", (req, res) => {
+  res.json(vehicles);
+});
+
+// simple stats tile data (optional; safe to include)
+app.get("/stats/summary", (req, res) => {
+  const activeRentals = vehicles.filter(v => v.status === "out").length;
+  res.json({
+    vehicles: vehicles.length,
+    activeRentals,
+    revenue: 17449, // placeholder for now
+  });
+});
+
 app.listen(PORT, () => console.log(`KV API listening on ${PORT}`));
 
