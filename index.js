@@ -228,6 +228,46 @@ app.put("/customers/:id", (req, res) => {
 
   res.json(c);
 });
+// create a new booking
+app.post("/bookings", (req, res) => {
+  const b = req.body || {};
+  const id = `bk_${Date.now()}`;
+
+  const customer = customers.find((c) => c.id === b.customerId);
+  const vehicle = vehicles.find((v) => v.id === b.vehicleId);
+  if (!customer || !vehicle) {
+    return res.status(400).json({ error: "Invalid customer or vehicle" });
+  }
+
+  const startDate = b.startDate || new Date().toISOString();
+  const endDate = b.endDate || null;
+  const status = b.status || "active"; // "active" or "reserved"
+  const startOdometer =
+    b.startOdometer !== undefined ? Number(b.startOdometer) : (vehicle.currentOdometer || 0);
+
+  const booking = {
+    id,
+    customerId: customer.id,
+    customerName: customer.name,
+    vehicleId: vehicle.id,
+    vehicleName: `${vehicle.year ?? ""} ${vehicle.make ?? ""} ${vehicle.model ?? ""}`.trim(),
+    plate: vehicle.plate,
+    startDate,
+    endDate,
+    status,
+    pickupLocation: b.pickupLocation || "Main Office",
+    dropoffLocation: b.dropoffLocation || "Main Office",
+    startOdometer,
+    endOdometer: null,
+  };
+
+  bookings.push(booking);
+
+  // if booking starts now, mark vehicle as out
+  if (status === "active") vehicle.status = "out";
+
+  res.status(201).json(booking);
+});
 
 // ===== Bookings (read-only demo) =====
 app.get("/bookings", (_req, res) => {
