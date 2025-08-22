@@ -1,280 +1,390 @@
-// index.js — KV Rentals API (full replacement)
-
+// index.js — KV Rentals demo API (Express + CORS, in-memory data)
 import express from "express";
 import cors from "cors";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-
-// ----- ES module dirname helpers -----
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(express.json());
 
-// ===== CORS: allow production + Vercel previews + localhost =====
-const ALLOWED_EXACT = [
-  "https://kv-dashboard-client.vercel.app", // your main prod client
-  "http://localhost:5173",                  // vite dev
-];
+// ----- CORS: allow your Vercel site, local dev and previews -----
+const isAllowedOrigin = (origin) => {
+  if (!origin) return true; // curl/Postman
+  try {
+    const url = new URL(origin);
+    const host = url.hostname;
 
-// Matches preview deployments like:
-// https://kv-dashboard-client-git-main-XXXXX.vercel.app
-// https://kv-dashboard-client-somehash.vercel.app
-const ALLOW_REGEX = [
-  /^https:\/\/kv-dashboard-client(?:-[a-z0-9-]+)?\.vercel\.app$/i,
-];
+    // your production client
+    if (origin === "https://kv-dashboard-client.vercel.app") return true;
+
+    // Vercel previews (git-main-xxx.vercel.app etc.)
+    if (host.endsWith(".vercel.app")) return true;
+
+    // local dev
+    if (origin === "http://localhost:5173" || origin === "http://127.0.0.1:5173")
+      return true;
+  } catch {
+    // not a URL
+  }
+  return false;
+};
 
 app.use(
   cors({
-    origin: (origin, cb) => {
-      if (!origin) return cb(null, true); // server-to-server, curl, Postman
-      if (ALLOWED_EXACT.includes(origin) || ALLOW_REGEX.some((r) => r.test(origin))) {
-        return cb(null, true);
-      }
-      return cb(new Error(`Not allowed by CORS: ${origin}`));
-    },
+    origin: (origin, cb) => (isAllowedOrigin(origin) ? cb(null, true) : cb(new Error("Not allowed by CORS"))),
     credentials: true,
   })
 );
 
-// ===== Static uploads (ready for future file uploads) =====
-const uploadsDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-app.use("/uploads", express.static(uploadsDir));
-
-// ===== In-memory demo data (resets on deploy) =====
+// ----- Demo data (in-memory). This resets every deploy/restart -----
 let vehicles = [
-  { id: "veh_1", year: 2022, make: "Toyota", model: "RAV4", vin: "JTMB1RFV0N1234567", color: "White", plate: "ABC-123", currentOdometer: 41250, status: "available" },
-  { id: "veh_2", year: 2020, make: "BMW", model: "3 Series", vin: "WBA8D9G58GNU12345", color: "Blue",  plate: "BMW-333", currentOdometer: 65320, status: "out" },
-  { id: "veh_3", year: 2019, make: "Ford", model: "Fiesta", vin: "3FADP4EJ2KM123456", color: "Red",   plate: "FOR-555", currentOdometer: 28870, status: "available" },
+  {
+    id: "veh_1",
+    year: 2022,
+    make: "Toyota",
+    model: "RAV4",
+    name: "2022 Toyota RAV4",
+    vin: "JTMB1RFV9N1234567",
+    color: "White",
+    plate: "ABC-123",
+    currentOdometer: 41250,
+    status: "available", // available | out | service
+  },
+  {
+    id: "veh_2",
+    year: 2019,
+    make: "BMW",
+    model: "3 Series",
+    name: "2019 BMW 3 Series",
+    vin: "WBA8E1C57G1234567",
+    color: "Black",
+    plate: "BMW-333",
+    currentOdometer: 65320,
+    status: "out",
+  },
+  {
+    id: "veh_3",
+    year: 2021,
+    make: "Ford",
+    model: "Fiesta",
+    name: "2021 Ford Fiesta",
+    vin: "3FADP4BJ1BM123456",
+    color: "Blue",
+    plate: "FOR-555",
+    currentOdometer: 28870,
+    status: "available",
+  },
 ];
 
 let customers = [
   {
-    id: "cus_1",
+    id: "cust_1",
     name: "Lisa Smith",
     email: "lisa@example.com",
-    phone: "+14055550101",
+    phone: "555-111-2222",
     licenseNumber: "S1234567",
-    insurance: { carrier: "Geico", policyNumber: "GEI-99123", expiresAt: "2026-05-31" },
-    documents: { driverLicenseUrl: "", insuranceCardUrl: "" },
-    address: "123 Ocean Ave, Miami, FL",
+    address: "123 Main St, Atlanta, GA",
+    insurance: {
+      carrier: "State Farm",
+      policyNumber: "SF-123-456",
+      expiresAt: "2026-06-30",
+    },
+    documents: {
+      driverLicenseUrl: "",
+      insuranceCardUrl: "",
+    },
   },
   {
-    id: "cus_2",
+    id: "cust_2",
     name: "Thomas Brown",
     email: "thomas@example.com",
-    phone: "+14055550102",
-    licenseNumber: "B2345678",
-    insurance: { carrier: "Progressive", policyNumber: "PRO-77221", expiresAt: "2025-12-31" },
-    documents: { driverLicenseUrl: "", insuranceCardUrl: "" },
-    address: "45 Broadway, New York, NY",
+    phone: "555-222-3333",
+    licenseNumber: "B7654321",
+    address: "77 Peachtree St, Atlanta, GA",
+    insurance: {
+      carrier: "Geico",
+      policyNumber: "GE-456-789",
+      expiresAt: "2025-12-31",
+    },
+    documents: {
+      driverLicenseUrl: "",
+      insuranceCardUrl: "",
+    },
   },
 ];
 
 let bookings = [
+  // example: completed booking with price for revenue calc
   {
-    id: "bk_1",
-    customerId: "cus_1",
-    customerName: "Lisa Smith",
-    vehicleId: "veh_2",
-    vehicleName: "2020 BMW 3 Series",
-    plate: "BMW-333",
-    startDate: "2025-08-20T10:00:00Z",
-    endDate:   "2025-08-22T10:00:00Z",
-    status: "active",
-    pickupLocation: "Main Office",
-    dropoffLocation: "Main Office",
+    id: "book_1",
+    customerId: "cust_1",
+    vehicleId: "veh_1",
+    startDate: "2025-08-01T10:00:00Z",
+    endDate: "2025-08-03T16:00:00Z",
+    status: "completed", // active | completed | canceled
+    notes: "Weekend rental",
+    price: 180.0,
   },
 ];
 
-// ===== Health & root =====
-app.get("/health", (_req, res) => {
-  res.json({ ok: true, uptime: process.uptime() });
-});
+// ----- Helpers -----
+const startedAt = Date.now();
+const findById = (arr, id) => arr.find((x) => x.id === id);
 
+// ----- Root/help -----
 app.get("/", (_req, res) => {
-  res.send("🚀 KV Rentals API is running. Try /stats/summary, /vehicles, /customers, /bookings");
+  res.send(
+    "KV Dashboard API is running. Try /health, /stats/summary, /vehicles, /customers, /bookings"
+  );
 });
 
-// ===== Summary tiles =====
-app.get("/stats/summary", (_req, res) => {
-  const activeRentals =
-    bookings.filter((b) => b.status === "active").length ||
-    vehicles.filter((v) => v.status === "out").length;
+// ----- Health -----
+app.get("/health", (_req, res) => {
+  res.json({ ok: true, uptime: (Date.now() - startedAt) / 1000 });
+});
 
-  const revenue = 12480; // demo placeholder
+// ----- Stats for Dashboard tiles -----
+app.get("/stats/summary", (_req, res) => {
+  const activeRentals = bookings.filter((b) => b.status === "active").length;
+  const revenue = bookings
+    .filter((b) => b.status === "completed" && typeof b.price === "number")
+    .reduce((sum, b) => sum + b.price, 0);
 
   res.json({
     bookingsTotal: bookings.length,
     activeRentals,
     vehicles: vehicles.length,
-    revenue,
+    revenue, // number
   });
 });
 
-// ===== Vehicles =====
-app.get("/vehicles", (_req, res) => {
-  res.json(vehicles);
-});
+// ================== VEHICLES ==================
 
+// list
+app.get("/vehicles", (_req, res) => res.json(vehicles));
+
+// get one
 app.get("/vehicles/:id", (req, res) => {
-  const v = vehicles.find((x) => x.id === req.params.id);
+  const v = findById(vehicles, req.params.id);
   if (!v) return res.status(404).json({ error: "Vehicle not found" });
   res.json(v);
 });
 
+// create
 app.post("/vehicles", (req, res) => {
-  const id = `veh_${Date.now()}`;
-  const body = req.body || {};
-  const newVeh = {
-    id,
-    year: Number(body.year) || null,
-    make: body.make || "",
-    model: body.model || "",
-    vin: body.vin || "",
-    color: body.color || "",
-    plate: body.plate || "",
-    currentOdometer: Number(body.currentOdometer) || 0,
-    status: body.status || "available",
+  const b = req.body || {};
+  if (!b.year || !b.make || !b.model || !b.plate)
+    return res
+      .status(400)
+      .json({ error: "Required: year, make, model, plate" });
+
+  const newVehicle = {
+    id: `veh_${Date.now()}`,
+    year: Number(b.year),
+    make: b.make,
+    model: b.model,
+    name: `${b.year} ${b.make} ${b.model}`,
+    vin: b.vin || "",
+    color: b.color || "",
+    plate: b.plate,
+    currentOdometer: Number(b.currentOdometer || 0),
+    status: b.status || "available",
   };
-  vehicles.push(newVeh);
-  res.status(201).json(newVeh);
+  vehicles.push(newVehicle);
+  res.status(201).json(newVehicle);
 });
 
+// update
 app.put("/vehicles/:id", (req, res) => {
-  const v = vehicles.find((x) => x.id === req.params.id);
+  const v = findById(vehicles, req.params.id);
   if (!v) return res.status(404).json({ error: "Vehicle not found" });
 
-  const body = req.body || {};
-  const fields = ["year", "make", "model", "vin", "color", "plate", "currentOdometer", "status"];
-  fields.forEach((f) => {
-    if (body[f] !== undefined) v[f] = f === "year" || f === "currentOdometer" ? Number(body[f]) : body[f];
-  });
+  const b = req.body || {};
+  if (b.year !== undefined) v.year = Number(b.year);
+  if (b.make !== undefined) v.make = b.make;
+  if (b.model !== undefined) v.model = b.model;
+  v.name = `${v.year} ${v.make} ${v.model}`;
+  if (b.vin !== undefined) v.vin = b.vin;
+  if (b.color !== undefined) v.color = b.color;
+  if (b.plate !== undefined) v.plate = b.plate;
+  if (b.currentOdometer !== undefined)
+    v.currentOdometer = Number(b.currentOdometer);
+  if (b.status !== undefined) v.status = b.status; // available | out | service
+
   res.json(v);
 });
 
-// convenience: update odometer only
-app.patch("/vehicles/:id/odometer", (req, res) => {
-  const v = vehicles.find((x) => x.id === req.params.id);
-  if (!v) return res.status(404).json({ error: "Vehicle not found" });
-  const parsed = parseInt(String(req.body?.odometer ?? "").replace(/\D/g, ""), 10);
-  if (isNaN(parsed)) return res.status(400).json({ error: "Invalid odometer" });
-  v.currentOdometer = parsed;
-  res.json(v);
-});
+// ================== CUSTOMERS ==================
 
-// ===== Customers =====
-app.get("/customers", (_req, res) => {
-  res.json(customers);
-});
+// list
+app.get("/customers", (_req, res) => res.json(customers));
 
+// get one
 app.get("/customers/:id", (req, res) => {
-  const c = customers.find((x) => x.id === req.params.id);
+  const c = findById(customers, req.params.id);
   if (!c) return res.status(404).json({ error: "Customer not found" });
   res.json(c);
 });
 
+// create
 app.post("/customers", (req, res) => {
-  const id = `cus_${Date.now()}`;
-  const body = req.body || {};
-  const newCus = {
-    id,
-    name: body.name ?? "",
-    email: body.email ?? "",
-    phone: body.phone ?? "",
-    licenseNumber: body.licenseNumber ?? "",
-    address: body.address ?? "",
+  const b = req.body || {};
+  if (!b.name || !b.phone)
+    return res.status(400).json({ error: "Required: name, phone" });
+
+  const newCustomer = {
+    id: `cust_${Date.now()}`,
+    name: b.name,
+    email: b.email || "",
+    phone: b.phone,
+    licenseNumber: b.licenseNumber || "",
+    address: b.address || "",
     insurance: {
-      carrier: body.insurance?.carrier ?? "",
-      policyNumber: body.insurance?.policyNumber ?? body.insurance?.policy ?? "",
-      expiresAt: body.insurance?.expiresAt ?? body.insurance?.expiry ?? "",
+      carrier: b.insurance?.carrier || "",
+      policyNumber: b.insurance?.policyNumber || "",
+      expiresAt: b.insurance?.expiresAt || "",
     },
     documents: {
-      driverLicenseUrl: body.documents?.driverLicenseUrl ?? "",
-      insuranceCardUrl: body.documents?.insuranceCardUrl ?? "",
+      driverLicenseUrl: b.documents?.driverLicenseUrl || "",
+      insuranceCardUrl: b.documents?.insuranceCardUrl || "",
     },
   };
-  customers.push(newCus);
-  res.status(201).json(newCus);
+  customers.push(newCustomer);
+  res.status(201).json(newCustomer);
 });
 
+// update
 app.put("/customers/:id", (req, res) => {
-  const c = customers.find((x) => x.id === req.params.id);
+  const c = findById(customers, req.params.id);
   if (!c) return res.status(404).json({ error: "Customer not found" });
 
-  const body = req.body || {};
-  if (body.name !== undefined) c.name = body.name;
-  if (body.email !== undefined) c.email = body.email;
-  if (body.phone !== undefined) c.phone = body.phone;
-  if (body.licenseNumber !== undefined) c.licenseNumber = body.licenseNumber;
-  if (body.address !== undefined) c.address = body.address;
+  const b = req.body || {};
+  if (b.name !== undefined) c.name = b.name;
+  if (b.email !== undefined) c.email = b.email;
+  if (b.phone !== undefined) c.phone = b.phone;
+  if (b.licenseNumber !== undefined) c.licenseNumber = b.licenseNumber;
+  if (b.address !== undefined) c.address = b.address;
 
-  if (body.insurance !== undefined) {
+  if (b.insurance !== undefined) {
     c.insurance = {
-      carrier: body.insurance.carrier ?? c.insurance?.carrier ?? "",
-      policyNumber: body.insurance.policyNumber ?? body.insurance.policy ?? c.insurance?.policyNumber ?? "",
-      expiresAt: body.insurance.expiresAt ?? body.insurance.expiry ?? c.insurance?.expiresAt ?? "",
+      carrier: b.insurance.carrier ?? c.insurance?.carrier ?? "",
+      policyNumber: b.insurance.policyNumber ?? c.insurance?.policyNumber ?? "",
+      expiresAt: b.insurance.expiresAt ?? c.insurance?.expiresAt ?? "",
     };
   }
-  if (body.documents !== undefined) {
+  if (b.documents !== undefined) {
     c.documents = {
-      driverLicenseUrl: body.documents.driverLicenseUrl ?? c.documents?.driverLicenseUrl ?? "",
-      insuranceCardUrl: body.documents.insuranceCardUrl ?? c.documents?.insuranceCardUrl ?? "",
+      driverLicenseUrl:
+        b.documents.driverLicenseUrl ?? c.documents?.driverLicenseUrl ?? "",
+      insuranceCardUrl:
+        b.documents.insuranceCardUrl ?? c.documents?.insuranceCardUrl ?? "",
     };
   }
 
   res.json(c);
 });
-// create a new booking
+
+// ================== BOOKINGS ==================
+
+// create booking
 app.post("/bookings", (req, res) => {
   const b = req.body || {};
-  const id = `bk_${Date.now()}`;
-
-  const customer = customers.find((c) => c.id === b.customerId);
-  const vehicle = vehicles.find((v) => v.id === b.vehicleId);
-  if (!customer || !vehicle) {
-    return res.status(400).json({ error: "Invalid customer or vehicle" });
+  if (!b.customerId || !b.vehicleId || !b.startDate || !b.endDate) {
+    return res
+      .status(400)
+      .json({
+        error: "Missing required: customerId, vehicleId, startDate, endDate",
+      });
   }
 
-  const startDate = b.startDate || new Date().toISOString();
-  const endDate = b.endDate || null;
-  const status = b.status || "active"; // "active" or "reserved"
-  const startOdometer =
-    b.startOdometer !== undefined ? Number(b.startOdometer) : (vehicle.currentOdometer || 0);
+  const customer = findById(customers, b.customerId);
+  if (!customer) return res.status(404).json({ error: "Customer not found" });
 
-  const booking = {
-    id,
-    customerId: customer.id,
-    customerName: customer.name,
-    vehicleId: vehicle.id,
-    vehicleName: `${vehicle.year ?? ""} ${vehicle.make ?? ""} ${vehicle.model ?? ""}`.trim(),
-    plate: vehicle.plate,
-    startDate,
-    endDate,
-    status,
-    pickupLocation: b.pickupLocation || "Main Office",
-    dropoffLocation: b.dropoffLocation || "Main Office",
-    startOdometer,
-    endOdometer: null,
+  const vehicle = findById(vehicles, b.vehicleId);
+  if (!vehicle) return res.status(404).json({ error: "Vehicle not found" });
+
+  if (vehicle.status === "out") {
+    return res.status(409).json({ error: "Vehicle is currently out" });
+  }
+
+  const newBooking = {
+    id: `book_${Date.now()}`,
+    customerId: b.customerId,
+    vehicleId: b.vehicleId,
+    startDate: b.startDate,
+    endDate: b.endDate,
+    status: "active", // active | completed | canceled
+    notes: b.notes ?? "",
+    price: typeof b.price === "number" ? b.price : null,
   };
+  bookings.push(newBooking);
 
-  bookings.push(booking);
+  // mark vehicle out
+  vehicle.status = "out";
 
-  // if booking starts now, mark vehicle as out
-  if (status === "active") vehicle.status = "out";
-
-  res.status(201).json(booking);
+  res.status(201).json(newBooking);
 });
 
-// ===== Bookings (read-only demo) =====
+// list bookings
 app.get("/bookings", (_req, res) => {
-  res.json(bookings);
+  const enriched = bookings.map((bk) => ({
+    ...bk,
+    customer: findById(customers, bk.customerId)?.name || null,
+    vehicle: findById(vehicles, bk.vehicleId)?.name || null,
+  }));
+  res.json(enriched);
 });
 
-// ===== Start server =====
+// get one booking
+app.get("/bookings/:id", (req, res) => {
+  const b = findById(bookings, req.params.id);
+  if (!b) return res.status(404).json({ error: "Booking not found" });
+  res.json({
+    ...b,
+    customer: findById(customers, b.customerId) || null,
+    vehicle: findById(vehicles, b.vehicleId) || null,
+  });
+});
+
+// update booking
+app.put("/bookings/:id", (req, res) => {
+  const bk = findById(bookings, req.params.id);
+  if (!bk) return res.status(404).json({ error: "Booking not found" });
+
+  const b = req.body || {};
+  if (b.startDate !== undefined) bk.startDate = b.startDate;
+  if (b.endDate !== undefined) bk.endDate = b.endDate;
+  if (b.notes !== undefined) bk.notes = b.notes;
+  if (b.price !== undefined) bk.price = b.price;
+
+  if (b.status !== undefined) {
+    bk.status = b.status; // active | completed | canceled
+
+    // sync vehicle status
+    const vehicle = findById(vehicles, bk.vehicleId);
+    if (vehicle) {
+      if (bk.status === "completed" || bk.status === "canceled") {
+        vehicle.status = "available";
+      } else if (bk.status === "active") {
+        vehicle.status = "out";
+      }
+    }
+  }
+
+  res.json(bk);
+});
+
+// delete/cancel booking (simple)
+app.delete("/bookings/:id", (req, res) => {
+  const idx = bookings.findIndex((b) => b.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "Booking not found" });
+
+  const [removed] = bookings.splice(idx, 1);
+  const vehicle = findById(vehicles, removed.vehicleId);
+  if (vehicle) vehicle.status = "available";
+
+  res.json({ ok: true, removedId: removed.id });
+});
+
+// ----- Start server -----
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`KV API listening on ${PORT}`);
