@@ -1,25 +1,16 @@
 {
   "name": "kv-dashboard-server",
   "version": "1.0.0",
-  "description": "Backend server for KV Rentals dashboard",
   "type": "module",
-  "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "engines": {
-    "node": ">=18.x"
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "express": "^4.18.2"
-  },
-  "license": "MIT",
-  "keywords": [
-    "kv",
-    "rentals",
-    "dashboard",
-    "server",
-    "express"
-  ]
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1"
+  }
 }
