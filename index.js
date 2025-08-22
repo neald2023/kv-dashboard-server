@@ -1,196 +1,241 @@
-// index.js — KV Rentals API (demo / mock storage)
-
 import express from "express";
 import cors from "cors";
-import multer from "multer";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
-
-// __dirname for ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 const app = express();
+app.use(express.json());
 
-// ---------- CORS ----------
-const CLIENT_ORIGIN = process.env.ALLOWED_ORIGIN || "*";
-const allowed = [CLIENT_ORIGIN, "http://localhost:5173", "http://localhost:3000"];
+// Allow your Vercel frontend to call this API
+const ALLOWED_ORIGINS = [
+  "https://kv-dashboard-client.vercel.app",
+  "http://localhost:5173",
+];
 app.use(
   cors({
     origin: (origin, cb) => {
       if (!origin) return cb(null, true);
-      if (allowed.includes("*") || allowed.includes(origin)) return cb(null, true);
-      cb(new Error(`Not allowed by CORS: ${origin}`));
+      if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+      return cb(new Error("Not allowed by CORS"));
     },
+    credentials: true,
   })
 );
 
-// ---------- Parsers ----------
-app.use(express.json());
-
-// ---------- Static for uploads ----------
-const uploadsDir = path.join(__dirname, "uploads");
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
-app.use("/uploads", express.static(uploadsDir));
-
-// ---------- File upload (license photo) ----------
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadsDir),
-  filename: (_req, file, cb) => {
-    const safe = file.originalname.replace(/\s+/g, "_");
-    cb(null, `${Date.now()}_${safe}`);
-  },
-});
-const upload = multer({ storage });
-
-// ---------- Demo in-memory data ----------
+// ---------------- In-memory demo data ----------------
+// (This will reset on each deploy; later we’ll swap for a database)
 let vehicles = [
-  { id: "veh_1", year: 2022, make: "Toyota", model: "RAV4", vin: "JTMB1RFV0N1234567", color: "White", licensePlate: "ABC-123", odometer: 41250, status: "available" },
-  { id: "veh_2", year: 2020, make: "BMW", model: "3 Series", vin: "WBA8D9G58GNU12345", color: "Blue", licensePlate: "BMW-333", odometer: 65320, status: "out" },
-  { id: "veh_3", year: 2019, make: "Ford", model: "Fiesta", vin: "3FADP4EJ2KM123456", color: "Red", licensePlate: "FOR-555", odometer: 28870, status: "available" }
+  {
+    id: "veh_1",
+    year: 2021,
+    make: "Toyota",
+    model: "RAV4",
+    vin: "JTMB1RFV1M5123456",
+    color: "White",
+    plate: "ABC-123",
+    currentOdometer: 41250,
+    status: "available", // available | out | service
+  },
+  {
+    id: "veh_2",
+    year: 2019,
+    make: "BMW",
+    model: "3 Series",
+    vin: "WBA8E3G59GNT12345",
+    color: "Gray",
+    plate: "BMW-333",
+    currentOdometer: 65320,
+    status: "out",
+  },
+  {
+    id: "veh_3",
+    year: 2020,
+    make: "Ford",
+    model: "Fiesta",
+    vin: "3FADP4BJ4LM123456",
+    color: "Blue",
+    plate: "FOR-555",
+    currentOdometer: 28870,
+    status: "available",
+  },
 ];
 
 let customers = [
   {
     id: "cus_1",
     name: "Lisa Smith",
+    phone: "+1 555-111-2222",
     email: "lisa@example.com",
-    phone: "+14055550101",
-    driverLicenseNumber: "S1234567",
-    insurance: { name: "Geico", policyNumber: "GEI-99123", expirationDate: "2026-05-31" },
-    licensePhotoUrl: null
+    licenseNumber: "S1234567",
+    insurance: {
+      carrier: "State Farm",
+      policyNumber: "STF-88221",
+      expiresAt: "2026-04-15",
+    },
+    documents: {
+      driverLicenseUrl: "",
+      insuranceCardUrl: "",
+    },
   },
   {
     id: "cus_2",
     name: "Thomas Brown",
+    phone: "+1 555-333-4444",
     email: "thomas@example.com",
-    phone: "+14055550102",
-    driverLicenseNumber: "B2345678",
-    insurance: { name: "Progressive", policyNumber: "PRO-77221", expirationDate: "2025-12-31" },
-    licensePhotoUrl: null
-  }
+    licenseNumber: "B7654321",
+    insurance: {
+      carrier: "Progressive",
+      policyNumber: "PRG-33449",
+      expiresAt: "2025-12-31",
+    },
+    documents: {
+      driverLicenseUrl: "",
+      insuranceCardUrl: "",
+    },
+  },
 ];
 
 let bookings = [
-  { id: "bk_1", customerId: "cus_1", vehicleId: "veh_2", startDate: "2025-08-20", endDate: "2025-08-22", status: "active", total: 240.0 }
+  {
+    id: "bok_1",
+    vehicleId: "veh_2",
+    customerId: "cus_2",
+    pickupAt: "2025-08-22T10:00:00Z",
+    dropoffAt: "2025-08-25T10:00:00Z",
+    status: "active", // active | completed | cancelled
+    startOdometer: 65320,
+    endOdometer: null,
+  },
 ];
 
-// ---------- Health + Home ----------
-app.get("/health", (_req, res) => {
+// ---------------- Health & summary ----------------
+app.get("/health", (req, res) => {
   res.json({ ok: true, uptime: process.uptime() });
 });
 
-app.get("/", (_req, res) => {
-  res.send("🚀 KV Rentals API is running. Try /stats/summary, /vehicles, /customers, /bookings");
-});
-
-// ---------- Stats ----------
-app.get("/stats/summary", (_req, res) => {
-  const activeRentals =
-    bookings.filter(b => b.status === "active").length ||
-    vehicles.filter(v => v.status === "out").length;
-
-  const revenue = 12480; // demo placeholder
-
+app.get("/stats/summary", (req, res) => {
+  const activeRentals = vehicles.filter((v) => v.status === "out").length;
+  const revenue = 12480; // demo number
   res.json({
     bookingsTotal: bookings.length,
     activeRentals,
     vehicles: vehicles.length,
-    revenue
+    revenue,
   });
 });
 
-// ---------- Vehicles ----------
-app.get("/vehicles", (_req, res) => {
+// ---------------- Vehicles ----------------
+app.get("/vehicles", (req, res) => {
   res.json(vehicles);
 });
 
-app.post("/vehicles", (req, res) => {
-  const { year, make, model, vin, color, licensePlate, odometer, status = "available" } = req.body;
-  const id = `veh_${Date.now()}`;
-  const newVeh = { id, year: Number(year), make, model, vin, color, licensePlate, odometer: Number(odometer) || 0, status };
-  vehicles.push(newVeh);
-  res.status(201).json(newVeh);
+app.get("/vehicles/:id", (req, res) => {
+  const v = vehicles.find((x) => x.id === req.params.id);
+  if (!v) return res.status(404).json({ error: "Vehicle not found" });
+  res.json(v);
 });
 
+// Update vehicle (odometer, status, etc.)
 app.put("/vehicles/:id", (req, res) => {
-  const v = vehicles.find(v => v.id === req.params.id);
-  if (!v) return res.status(404).json({ error: "Vehicle not found" });
+  const idx = vehicles.findIndex((x) => x.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "Vehicle not found" });
 
-  const fields = ["year", "make", "model", "vin", "color", "licensePlate", "odometer", "status"];
-  for (const f of fields) {
-    if (req.body[f] !== undefined) v[f] = f === "odometer" || f === "year" ? Number(req.body[f]) : req.body[f];
+  const allowed = [
+    "year",
+    "make",
+    "model",
+    "vin",
+    "color",
+    "plate",
+    "currentOdometer",
+    "status",
+  ];
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) vehicles[idx][key] = req.body[key];
   }
-  res.json(v);
+  res.json(vehicles[idx]);
 });
 
-// convenience endpoint for odometer-only update
-app.patch("/vehicles/:id/odometer", (req, res) => {
-  const v = vehicles.find(v => v.id === req.params.id);
-  if (!v) return res.status(404).json({ error: "Vehicle not found" });
-  v.odometer = Number(req.body.odometer) || v.odometer;
-  res.json(v);
+// Create a new vehicle (simple id generator)
+app.post("/vehicles", (req, res) => {
+  const id = "veh_" + Math.random().toString(36).slice(2, 8);
+  const v = {
+    id,
+    year: req.body.year ?? 2024,
+    make: req.body.make ?? "",
+    model: req.body.model ?? "",
+    vin: req.body.vin ?? "",
+    color: req.body.color ?? "",
+    plate: req.body.plate ?? "",
+    currentOdometer: Number(req.body.currentOdometer ?? 0),
+    status: req.body.status ?? "available",
+  };
+  vehicles.push(v);
+  res.status(201).json(v);
 });
 
-// ---------- Customers ----------
-app.get("/customers", (_req, res) => {
+// ---------------- Customers ----------------
+app.get("/customers", (req, res) => {
   res.json(customers);
 });
 
-// create customer with optional license photo
-app.post("/customers", upload.single("licensePhoto"), (req, res) => {
-  const { name, email, phone, driverLicenseNumber, insuranceName, policyNumber, expirationDate } = req.body;
-
-  const id = `cus_${Date.now()}`;
-  const licensePhotoUrl = req.file ? `/uploads/${req.file.filename}` : null;
-
-  const newCustomer = {
-    id,
-    name,
-    email,
-    phone,
-    driverLicenseNumber,
-    insurance: {
-      name: insuranceName || "",
-      policyNumber: policyNumber || "",
-      expirationDate: expirationDate || ""
-    },
-    licensePhotoUrl
-  };
-
-  customers.push(newCustomer);
-  res.status(201).json(newCustomer);
-});
-
-// update customer (you can also upload a new license photo)
-app.put("/customers/:id", upload.single("licensePhoto"), (req, res) => {
-  const c = customers.find(c => c.id === req.params.id);
+app.get("/customers/:id", (req, res) => {
+  const c = customers.find((x) => x.id === req.params.id);
   if (!c) return res.status(404).json({ error: "Customer not found" });
-
-  const { name, email, phone, driverLicenseNumber, insuranceName, policyNumber, expirationDate } = req.body;
-  if (name !== undefined) c.name = name;
-  if (email !== undefined) c.email = email;
-  if (phone !== undefined) c.phone = phone;
-  if (driverLicenseNumber !== undefined) c.driverLicenseNumber = driverLicenseNumber;
-
-  c.insurance = {
-    name: insuranceName ?? c.insurance?.name ?? "",
-    policyNumber: policyNumber ?? c.insurance?.policyNumber ?? "",
-    expirationDate: expirationDate ?? c.insurance?.expirationDate ?? ""
-  };
-
-  if (req.file) c.licensePhotoUrl = `/uploads/${req.file.filename}`;
-
   res.json(c);
 });
 
-// ---------- Bookings (placeholder list) ----------
-app.get("/bookings", (_req, res) => {
+// Update customer (including insurance + doc URLs)
+app.put("/customers/:id", (req, res) => {
+  const idx = customers.findIndex((x) => x.id === req.params.id);
+  if (idx === -1) return res.status(404).json({ error: "Customer not found" });
+
+  const allowed = [
+    "name",
+    "phone",
+    "email",
+    "licenseNumber",
+    "insurance",
+    "documents",
+  ];
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) customers[idx][key] = req.body[key];
+  }
+  res.json(customers[idx]);
+});
+
+// Create customer
+app.post("/customers", (req, res) => {
+  const id = "cus_" + Math.random().toString(36).slice(2, 8);
+  const c = {
+    id,
+    name: req.body.name ?? "",
+    phone: req.body.phone ?? "",
+    email: req.body.email ?? "",
+    licenseNumber: req.body.licenseNumber ?? "",
+    insurance: {
+      carrier: req.body.insurance?.carrier ?? "",
+      policyNumber: req.body.insurance?.policyNumber ?? "",
+      expiresAt: req.body.insurance?.expiresAt ?? "",
+    },
+    documents: {
+      driverLicenseUrl: req.body.documents?.driverLicenseUrl ?? "",
+      insuranceCardUrl: req.body.documents?.insuranceCardUrl ?? "",
+    },
+  };
+  customers.push(c);
+  res.status(201).json(c);
+});
+
+// ---------------- Bookings (read-only for now) ----------------
+app.get("/bookings", (req, res) => {
   res.json(bookings);
 });
 
-// ------------------ START SERVER ------------------
+// ---------------- Root ----------------
+app.get("/", (req, res) => {
+  res.send("KV Dashboard API is running. Try /health or /stats/summary");
+});
+
+// ---------------- Start server ----------------
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`KV API listening on ${PORT}`);
